@@ -1,5 +1,7 @@
 const { exec } = require('child_process');
 const util = require('util');
+const fs = require('fs').promises;
+const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
@@ -9,7 +11,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 async function startConversation() {
   console.log('🎙️  Aethera is listening... (Press Ctrl+C to exit)');
   
-  // For now, let's use console input instead of audio recording
   const readline = require('readline').createInterface({
     input: process.stdin,
     output: process.stdout
@@ -20,11 +21,9 @@ async function startConversation() {
       readline.question('You: ', resolve);
     });
     
-    // Get AI response
     const response = await getAIResponse(text);
     console.log('Aethera:', response);
     
-    // Convert response to speech and play it
     await textToSpeechAndPlay(response);
   }
 }
@@ -38,10 +37,26 @@ async function getAIResponse(text) {
 
 async function textToSpeechAndPlay(text) {
   try {
-    // Escape single quotes in the text to prevent PowerShell command breaking
-    const escapedText = text.replace(/'/g, "''");
-    const command = `powershell -c "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('${escapedText}')"`;
-    await execPromise(command);
+    const tempDir = path.join(process.env.TEMP || process.env.TMP || '.');
+    const vbsPath = path.join(tempDir, 'speak.vbs');
+    
+    // Clean the text: replace newlines with spaces and escape quotes
+    const cleanText = text
+      .replace(/\n/g, ' ')  // Replace newlines with spaces
+      .replace(/"/g, '""')  // Double up quotes for VBScript
+      .replace(/[^\x20-\x7E]/g, ''); // Remove any other special characters
+    
+    // VBScript for faster TTS
+    const vbsContent = `
+      Set speech = CreateObject("SAPI.SpVoice")
+      speech.Rate = 1
+      speech.Volume = 100
+      speech.Speak "${cleanText}"
+    `;
+
+    await fs.writeFile(vbsPath, vbsContent);
+    await execPromise(`cscript //nologo "${vbsPath}"`);
+    await fs.unlink(vbsPath);
   } catch (error) {
     console.error('Error playing speech:', error.message);
     console.log('Text that should have been spoken:', text);
