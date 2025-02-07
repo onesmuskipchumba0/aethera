@@ -13,11 +13,26 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const LISTENING_ANIMATION = ['◜', '◠', '◝', '◞', '◡', '◟'];
 let animationFrame = 0;
 
+async function listVoices() {
+  const tempDir = path.join(process.env.TEMP || process.env.TMP || '.');
+  const vbsPath = path.join(tempDir, 'listVoices.vbs');
+  
+  const vbsContent = `
+    Set speech = CreateObject("SAPI.SpVoice")
+    For Each voice in speech.GetVoices
+      WScript.Echo voice.GetDescription
+    Next
+  `;
+
+  await fs.writeFile(vbsPath, vbsContent);
+  const { stdout } = await execPromise(`cscript //nologo "${vbsPath}"`);
+  await fs.unlink(vbsPath);
+  return stdout.split('\n').filter(Boolean);
+}
+
 async function startConversation() {
-  // Clear screen
   console.clear();
   
-  // Generate ASCII art using figlet
   console.log(chalk.cyan(
     figlet.textSync('AETHERA', {
       font: 'Big',
@@ -26,13 +41,25 @@ async function startConversation() {
     })
   ));
   
-  console.log(chalk.yellow('Welcome to Aethera - Your AI Assistant'));
-  console.log(chalk.gray('Press Ctrl+C to exit\n'));
+  // List available voices
+  const voices = await listVoices();
+  console.log(chalk.yellow('\nAvailable voices:'));
+  voices.forEach((voice, index) => {
+    console.log(chalk.gray(`${index}: ${voice}`));
+  });
   
+  // Ask user to select a voice
   const readline = require('readline').createInterface({
     input: process.stdin,
     output: process.stdout
   });
+
+  const voiceIndex = await new Promise(resolve => {
+    readline.question(chalk.yellow('\nSelect a voice number (0-' + (voices.length-1) + '): '), resolve);
+  });
+
+  console.log(chalk.yellow('\nWelcome to Aethera - Your AI Assistant'));
+  console.log(chalk.gray('Press Ctrl+C to exit\n'));
 
   while (true) {
     const text = await new Promise(resolve => {
@@ -42,18 +69,16 @@ async function startConversation() {
       readline.question('\n' + chalk.green('You: '), resolve);
     });
     
-    // Clear the animation line
     process.stdout.write('\r' + ' '.repeat(20) + '\r');
     
     console.log(chalk.gray('⋮ Thinking...'));
     const response = await getAIResponse(text);
     
-    // Format the response with a nice border
     console.log(chalk.magenta('┌─ Aethera ───────────────────'));
     console.log(chalk.magenta('│') + ' ' + response.split('\n').join('\n' + chalk.magenta('│') + ' '));
     console.log(chalk.magenta('└────────────────────────────\n'));
     
-    await textToSpeechAndPlay(response);
+    await textToSpeechAndPlay(response, voiceIndex);
   }
 }
 
@@ -89,20 +114,19 @@ function stripMarkdown(text) {
     .trim();
 }
 
-async function textToSpeechAndPlay(text) {
+async function textToSpeechAndPlay(text, voiceIndex = 0) {
   try {
     const tempDir = path.join(process.env.TEMP || process.env.TMP || '.');
     const vbsPath = path.join(tempDir, 'speak.vbs');
     
-    // Clean the text: replace newlines with spaces and escape quotes
     const cleanText = text
-      .replace(/\n/g, ' ')  // Replace newlines with spaces
-      .replace(/"/g, '""')  // Double up quotes for VBScript
-      .replace(/[^\x20-\x7E]/g, ''); // Remove any other special characters
+      .replace(/\n/g, ' ')
+      .replace(/"/g, '""')
+      .replace(/[^\x20-\x7E]/g, '');
     
-    // VBScript for faster TTS
     const vbsContent = `
       Set speech = CreateObject("SAPI.SpVoice")
+      Set speech.Voice = speech.GetVoices.Item(${voiceIndex})
       speech.Rate = 1
       speech.Volume = 100
       speech.Speak "${cleanText}"
