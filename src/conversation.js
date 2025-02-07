@@ -8,10 +8,47 @@ const chalk = require('chalk');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let genAI;
 
 const LISTENING_ANIMATION = ['◜', '◠', '◝', '◞', '◡', '◟'];
 let animationFrame = 0;
+
+async function checkAndSetupEnv() {
+  try {
+    await fs.access('.env');
+    require('dotenv').config();
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  } catch (error) {
+    console.clear();
+    console.log(chalk.cyan(
+      figlet.textSync('AETHERA', {
+        font: 'Big',
+        horizontalLayout: 'default',
+        verticalLayout: 'default'
+      })
+    ));
+    
+    console.log(chalk.yellow('\nWelcome to Aethera! Let\'s set up your configuration.'));
+    
+    const readline = require('readline').createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    const apiKey = await new Promise(resolve => {
+      readline.question(chalk.green('\nPlease enter your Gemini API key: '), resolve);
+    });
+
+    const envContent = `GEMINI_API_KEY=${apiKey}`;
+    await fs.writeFile('.env', envContent);
+    
+    console.log(chalk.green('\nConfiguration saved successfully!'));
+    readline.close();
+    
+    require('dotenv').config();
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+}
 
 async function listVoices() {
   const tempDir = path.join(process.env.TEMP || process.env.TMP || '.');
@@ -58,8 +95,9 @@ async function textToSpeech(text, voiceIndex = 0) {
 }
 
 async function startConversation() {
-  console.clear();
+  await checkAndSetupEnv();
   
+  console.clear();
   console.log(chalk.cyan(
     figlet.textSync('AETHERA', {
       font: 'Big',
