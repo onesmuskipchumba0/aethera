@@ -17,6 +17,7 @@
     "commander": "^13.1.0",
     "dotenv": "^16.4.7",
     "figlet": "^1.7.0",
-    "chalk": "^4.1.2"
+    "chalk": "^4.1.2",
+    "assemblyai": "^4.0.0"
   }
 }
